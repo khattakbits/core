@@ -2,7 +2,6 @@
 
 namespace KhattakBits\Core\Http\Controllers;
 
-use App\Http\Controllers\Controller;
 use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use KhattakBits\Core\Models\AuditLog;
