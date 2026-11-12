@@ -1,0 +1,36 @@
+<?php
+
+namespace KhattakBits\Core\Support;
+
+use Illuminate\Support\Facades\Cache;
+use KhattakBits\Core\Models\Setting;
+
+final class SettingsStore
+{
+    private const CACHE_KEY = 'settings.all';
+
+    public function all(): array
+    {
+        return Cache::rememberForever(self::CACHE_KEY, fn () => Setting::query()->pluck('value', 'key')->all());
+    }
+
+    public function get(string $key, mixed $default = null): mixed
+    {
+        $value = $this->all()[$key] ?? null;
+
+        return $value === null || $value === '' ? $default : $value;
+    }
+
+    public function setMany(array $values): void
+    {
+        foreach ($values as $key => $value) {
+            Setting::updateOrCreate(['key' => $key], ['value' => $value === null ? null : (string) $value]);
+        }
+        Cache::forget(self::CACHE_KEY);
+
+        // Email settings badle to mail readiness dobara check ho
+        if (array_filter(array_keys($values), fn ($key) => str_starts_with($key, 'email_'))) {
+            Mailer::forgetReady();
+        }
+    }
+}
