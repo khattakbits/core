@@ -17,7 +17,8 @@ return new class extends Migration
             $table->string('subject', 200);
             $table->text('body');
             $table->boolean('is_active')->default(true);
-            $table->foreignId('updated_by')->nullable()->constrained('users')->nullOnDelete();
+            // `users` central DB mein hai — cross-DB FK impossible (D1 rule, 03 §Step 0).
+            $table->unsignedBigInteger('updated_by')->nullable()->index();
             $table->timestamps();
         });
     }

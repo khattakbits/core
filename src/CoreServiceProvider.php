@@ -13,8 +13,10 @@ use KhattakBits\Core\Console\PruneEmails;
 use KhattakBits\Core\Console\PurgeBin;
 use KhattakBits\Core\Support\DocumentRegistry;
 use KhattakBits\Core\Support\EmailTemplates;
+use KhattakBits\Core\Support\MigrationPaths;
 use KhattakBits\Core\Support\ModuleRegistry;
 use KhattakBits\Core\Support\SettingsStore;
+use RuntimeException;
 
 /**
  * Package entry point.
@@ -32,6 +34,60 @@ class CoreServiceProvider extends ServiceProvider
     private function packagePath(string $path = ''): string
     {
         return dirname(__DIR__).($path === '' ? '' : DIRECTORY_SEPARATOR.$path);
+    }
+
+    /**
+     * D2 split ke baad migrations do folders mein hain (docs/platform/03 D2.3).
+     *
+     * - `khattakbits.tenancy.enabled = false` (CP / starter kit / tests): dono folders
+     *   `loadMigrationsFrom()` se register hoti hain, is liye plain `php artisan migrate`
+     *   ek hi DB mein poora schema bana deta hai.
+     * - `true` (multi-DB product): sirf `central/` register hota hai; `tenant/` folders
+     *   `tenancy.migration_parameters['--path']` se `tenants:migrate` ko milte hain.
+     */
+    private function bootMigrations(): void
+    {
+        $registry = $this->app->make(ModuleRegistry::class);
+        $tenancyEnabled = (bool) config('khattakbits.tenancy.enabled', false);
+
+        $folders = MigrationPaths::folders($this->packagePath('database/migrations'), $registry);
+
+        foreach (MigrationPaths::forMigrate($folders, $tenancyEnabled) as $path) {
+            $this->loadMigrationsFrom($path);
+        }
+
+        if ($tenancyEnabled) {
+            $this->exposeTenantMigrations($folders['tenant']);
+        }
+    }
+
+    /**
+     * Tenant folders ko `tenants:migrate` ke `--path` mein daalta hai.
+     *
+     * `config(['tenancy.migration_parameters.--path' => ...])` kaam nahi karta: `Arr::set()`
+     * dot ko nesting samajhta hai, is liye poora array replace hota hai.
+     *
+     * @param  list<string>  $tenantPaths
+     */
+    private function exposeTenantMigrations(array $tenantPaths): void
+    {
+        // Flag faisla karta hai; yeh check sirf misconfiguration pakadne ke liye hai —
+        // package ke baghair flag true ho to tenant migrations khamoshi se gayab ho jatin.
+        // String check: `stancl/tenancy` optional dependency hai, is liye `use` import
+        // nahi karte (class constant compile-time par resolve hota hai, magar static
+        // analysers missing class par shor machate hain).
+        if (! class_exists('Stancl\Tenancy\Tenancy')) {
+            throw new RuntimeException(
+                'khattakbits.tenancy.enabled is true but stancl/tenancy is not installed. '.
+                'Tenant migrations would never run — install the package or set KB_TENANCY_ENABLED=false.'
+            );
+        }
+
+        $params = config('tenancy.migration_parameters', []);
+
+        $params['--path'] = array_values(array_unique(array_merge($tenantPaths, $params['--path'] ?? [])));
+
+        config(['tenancy.migration_parameters' => $params]);
     }
 
     public function register(): void
@@ -52,14 +108,7 @@ class CoreServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
-        $this->loadMigrationsFrom($this->packagePath('database/migrations'));
-
-        foreach ($this->app->make(ModuleRegistry::class)->all() as $module) {
-            $migrations = $module['path'].'/Database/Migrations';
-            if (is_dir($migrations)) {
-                $this->loadMigrationsFrom($migrations);
-            }
-        }
+        $this->bootMigrations();
 
         $this->loadRoutesFrom($this->packagePath('routes/web.php'));
 
