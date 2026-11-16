@@ -92,10 +92,19 @@ class CoreServiceProvider extends ServiceProvider
 
     public function register(): void
     {
-        // Config defaults. Product `vendor:publish --tag=khattakbits-config` se
-        // apni copies rakhta hai; mergeConfigFrom sirf un installs ke liye hai
-        // jinhone publish nahi kiya (config cache hone par yeh no-op hai —
-        // is liye published copy hi asal source of truth hai).
+        // Config defaults.
+        //
+        // `mergeConfigFrom()` `config:cache` ke saath **kaam karta hai**: `config:cache`
+        // pehle app boot karta hai (providers ke saath), aur us boot mein merge hui
+        // defaults cache file (`bootstrap/cache/config.php`) mein chali jati hain. Yani
+        // package ki config keys cache hone ke baad bhi mojood rehti hain — yeh P0a mein
+        // verify kiya gaya (`config:show` cache ke baad bhi package keys dikhata hai).
+        //
+        // Do asli caveats:
+        // 1. Published copy (`vendor:publish --tag=khattakbits-config`) ki keys package
+        //    defaults ko override karti hain — publish kiya hua file hi source of truth hai.
+        // 2. Cache banna ke baad package ki config file edit karne se kuch nahi hota jab
+        //    tak `config:cache` dobara na chale — yani deploy par cache rebuild lazmi hai.
         foreach (['khattakbits', 'attachments', 'documents', 'email', 'security'] as $name) {
             $this->mergeConfigFrom($this->packagePath("config/{$name}.php"), $name);
         }
